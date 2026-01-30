@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { Role } from '../common/enums/role.enum';
+import { Role } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
