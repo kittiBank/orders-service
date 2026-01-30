@@ -23,7 +23,7 @@ export class OrdersService {
       sortOrder = "desc",
     } = query;
 
-    // Build where clause
+    // Build where clause for filtering
     const where: any = {
       deletedAt: null, // Exclude soft-deleted orders
       ...(status && { status }),
@@ -143,19 +143,53 @@ export class OrdersService {
     const success: string[] = [];
     const failed: { id: string; reason: string }[] = [];
 
-    // Process each order
+    // Check all orders exist and are not deleted
+    const existingOrders = await this.prisma.order.findMany({
+      where: {
+        id: { in: bulkUpdateDto.orderIds },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    const existingOrderIds = new Set(existingOrders.map((order) => order.id));
+
+    // Identify missing or deleted orders
     for (const orderId of bulkUpdateDto.orderIds) {
-      try {
-        await this.prisma.order.update({
-          where: { id: orderId },
-          data: { status: bulkUpdateDto.status as any },
-        });
-        success.push(orderId);
-      } catch (error) {
+      if (!existingOrderIds.has(orderId)) {
         failed.push({
           id: orderId,
-          reason: error.message || "Unknown error",
+          reason: "Order not found or has been deleted",
         });
+      }
+    }
+
+    // Update only the valid orders
+    const validOrderIds = bulkUpdateDto.orderIds.filter((id) =>
+      existingOrderIds.has(id),
+    );
+
+    if (validOrderIds.length > 0) {
+      try {
+        // Bulk update all valid orders in a single transaction
+        await this.prisma.order.updateMany({
+          where: {
+            id: { in: validOrderIds },
+          },
+          data: {
+            status: bulkUpdateDto.status as any,
+          },
+        });
+
+        success.push(...validOrderIds);
+      } catch (error) {
+        // If the bulk update fails, mark all valid orders as failed
+        for (const orderId of validOrderIds) {
+          failed.push({
+            id: orderId,
+            reason: error.message || "Update failed",
+          });
+        }
       }
     }
 
