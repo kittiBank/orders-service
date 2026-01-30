@@ -64,3 +64,4 @@ README.md
 .env.example
 /generated/prisma
 SETUP_GUIDE.md
+RBAC_GUIDE.md
