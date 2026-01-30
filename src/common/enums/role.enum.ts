@@ -1,5 +1,2 @@
-export enum Role {
-  ADMIN = 'admin',
-  SELLER = 'seller',
-  CUSTOMER = 'customer',
-}
+// Re-export Prisma's Role enum for consistency
+export { Role } from '@prisma/client';
