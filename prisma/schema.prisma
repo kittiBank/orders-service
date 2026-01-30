@@ -38,6 +38,20 @@ model User {
   @@map("users")
 }
 
+// Token Blacklist Table (for revoked tokens)
+model TokenBlacklist {
+  id        String   @id @default(uuid())
+  token     String   @unique // JWT token (hashed for security)
+  userId    String   // User who owns the token
+  reason    String?  // Reason for revocation (optional)
+  expiresAt DateTime // Token expiration time
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("token_blacklist")
+}
+
 // Orders Table
 model Order {
   id              String        @id @default(uuid())

@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RevokeTokenDto } from './dto/revoke-token.dto';
 import { Role } from '@prisma/client';
 
 @Injectable()
@@ -133,6 +134,120 @@ export class AuthService {
 
     return {
       message: 'Logged out successfully',
+    };
+  }
+
+  /**
+   * Revoke a specific token by adding it to the blacklist
+   */
+  async revokeToken(revokeTokenDto: RevokeTokenDto, userId: string) {
+    try {
+      // Verify and decode the token
+      const payload = await this.jwtService.verifyAsync(revokeTokenDto.token, {
+        secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+      });
+
+      // Check if token belongs to the user
+      if (payload.sub !== userId) {
+        throw new UnauthorizedException('You can only revoke your own tokens');
+      }
+
+      // Hash the token for storage (don't store plain tokens)
+      const hashedToken = await bcrypt.hash(revokeTokenDto.token, 10);
+
+      // Calculate expiration time from token
+      const expiresAt = new Date(payload.exp * 1000);
+
+      // Add to blacklist
+      await this.prismaService.tokenBlacklist.create({
+        data: {
+          token: hashedToken,
+          userId: payload.sub,
+          reason: revokeTokenDto.reason || 'Manual revocation',
+          expiresAt,
+        },
+      });
+
+      return {
+        message: 'Token revoked successfully',
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Invalid token');
+    }
+  }
+
+  /**
+   * Revoke all tokens for a specific user
+   */
+  async revokeAllTokens(userId: string, reason?: string) {
+    // Clear refresh token
+    await this.prismaService.user.update({
+      where: { id: userId },
+      data: { refreshToken: null },
+    });
+
+    // Note: We can't blacklist all access tokens since we don't store them
+    // But we've cleared the refresh token, so they can't get new access tokens
+    // Access tokens will naturally expire after 15 minutes
+
+    return {
+      message: 'All tokens revoked successfully. You will be logged out from all devices.',
+      note: 'Active access tokens will expire within 15 minutes',
+    };
+  }
+
+  /**
+   * Check if a token is blacklisted
+   */
+  async isTokenBlacklisted(token: string): Promise<boolean> {
+    try {
+      // Get all blacklisted tokens for efficiency check
+      const blacklistedTokens = await this.prismaService.tokenBlacklist.findMany({
+        where: {
+          expiresAt: {
+            gt: new Date(), // Only check non-expired blacklisted tokens
+          },
+        },
+        select: {
+          token: true,
+        },
+      });
+
+      // Check if any hashed token matches
+      for (const blacklisted of blacklistedTokens) {
+        const isMatch = await bcrypt.compare(token, blacklisted.token);
+        if (isMatch) {
+          return true;
+        }
+      }
+
+      return false;
+    } catch (error) {
+      // If there's an error checking blacklist, fail safe and allow the token
+      // This prevents service disruption if the blacklist check fails
+      console.error('Error checking token blacklist:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Clean up expired tokens from blacklist (should be run periodically)
+   */
+  async cleanupExpiredTokens() {
+    const result = await this.prismaService.tokenBlacklist.deleteMany({
+      where: {
+        expiresAt: {
+          lt: new Date(),
+        },
+      },
+    });
+
+    return {
+      message: 'Expired tokens cleaned up',
+      deletedCount: result.count,
     };
   }
 
