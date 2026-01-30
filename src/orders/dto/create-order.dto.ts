@@ -71,6 +71,12 @@ export class CreateOrderDto {
   @Type(() => ShippingAddressDto)
   shippingAddress: ShippingAddressDto;
 
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  shippingFee?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

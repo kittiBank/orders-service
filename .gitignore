@@ -62,3 +62,5 @@ Thumbs.db
 
 README.md
 .env.example
+/generated/prisma
+SETUP_GUIDE.md

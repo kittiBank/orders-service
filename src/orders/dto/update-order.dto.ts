@@ -30,6 +30,7 @@ export class PartialShippingAddressDto {
   postalCode?: string;
 }
 
+// Allow data field to update order
 export class UpdateOrderDto {
   @ApiPropertyOptional({ enum: OrderStatus })
   @IsOptional()
