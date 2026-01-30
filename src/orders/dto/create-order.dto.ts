@@ -8,6 +8,7 @@ import {
   IsNumber,
   Min,
   IsOptional,
+  ArrayMinSize,
 } from "class-validator";
 
 export class OrderItemDto {
@@ -62,6 +63,7 @@ export class CreateOrderDto {
 
   @ApiProperty({ type: [OrderItemDto] })
   @IsArray()
+  @ArrayMinSize(1, { message: "Order must have at least one item" })
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
   items: OrderItemDto[];

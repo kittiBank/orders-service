@@ -1,10 +1,17 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsArray, IsEnum, IsNotEmpty, IsString } from "class-validator";
+import {
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsString,
+  ArrayMinSize,
+} from "class-validator";
 import { OrderStatus } from "../../common/enums/order-status.enum";
 
 export class BulkUpdateDto {
   @ApiProperty({ type: [String] })
   @IsArray()
+  @ArrayMinSize(1, { message: "Must provide at least one order ID" })
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
   orderIds: string[];
