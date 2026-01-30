@@ -19,6 +19,7 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from "@nestjs/swagger";
+import { Throttle } from "@nestjs/throttler";
 import { OrdersService } from "./orders.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
@@ -42,8 +43,10 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Get()
+  @Throttle({ long: { limit: 100, ttl: 60000 } }) // 100 requests per minute per user
   @ApiOperation({ summary: "List orders with filters and pagination" })
   @ApiResponse({ status: 200, description: "Orders retrieved successfully" })
+  @ApiResponse({ status: 429, description: "Too many requests" })
   async findAll(
     @Query() query: GetOrdersQueryDto,
     @CurrentUser() user: any,
@@ -57,9 +60,11 @@ export class OrdersController {
   }
 
   @Get(":id")
+  @Throttle({ long: { limit: 100, ttl: 60000 } }) // 100 requests per minute per user
   @ApiOperation({ summary: "Get single order by ID" })
   @ApiResponse({ status: 200, description: "Order found" })
   @ApiResponse({ status: 404, description: "Order not found" })
+  @ApiResponse({ status: 429, description: "Too many requests" })
   async findOne(
     @Param("id") id: string,
     @CurrentUser() user: any,
@@ -76,9 +81,11 @@ export class OrdersController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ medium: { limit: 20, ttl: 60000 } }) // 20 order creations per minute per user
   @ApiOperation({ summary: "Create new order" })
   @ApiResponse({ status: 201, description: "Order created successfully" })
   @ApiResponse({ status: 400, description: "Invalid request data" })
+  @ApiResponse({ status: 429, description: "Too many requests" })
   async create(
     @Body() createOrderDto: CreateOrderDto,
     @CurrentUser() user: any,
@@ -92,17 +99,21 @@ export class OrdersController {
 
   @Patch("bulk")
   @Roles(Role.ADMIN, Role.SELLER)
+  @Throttle({ medium: { limit: 10, ttl: 60000 } }) // 10 bulk updates per minute per user
   @ApiOperation({ summary: "Bulk update order status" })
   @ApiResponse({ status: 200, description: "Bulk update completed" })
   @ApiResponse({ status: 400, description: "Invalid request data" })
+  @ApiResponse({ status: 429, description: "Too many requests" })
   async bulkUpdate(@Body() bulkUpdateDto: BulkUpdateDto) {
     return this.ordersService.bulkUpdate(bulkUpdateDto);
   }
 
   @Patch(":id")
+  @Throttle({ medium: { limit: 30, ttl: 60000 } }) // 30 updates per minute per user
   @ApiOperation({ summary: "Update order" })
   @ApiResponse({ status: 200, description: "Order updated successfully" })
   @ApiResponse({ status: 404, description: "Order not found" })
+  @ApiResponse({ status: 429, description: "Too many requests" })
   async update(
     @Param("id") id: string,
     @Body() updateOrderDto: UpdateOrderDto,
@@ -126,9 +137,11 @@ export class OrdersController {
   @Delete(":id")
   @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ short: { limit: 10, ttl: 60000 } }) // 10 deletions per minute per user
   @ApiOperation({ summary: "Soft delete order" })
   @ApiResponse({ status: 204, description: "Order deleted successfully" })
   @ApiResponse({ status: 404, description: "Order not found" })
+  @ApiResponse({ status: 429, description: "Too many requests" })
   async remove(@Param("id") id: string) {
     return this.ordersService.remove(id);
   }
