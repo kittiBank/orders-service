@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { Role } from '../common/enums/role.enum';
 
 @Injectable()
 export class AuthService {
@@ -26,17 +27,18 @@ export class AuthService {
     // Hash password
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    // Create user
+    // Create user with role (default to CUSTOMER)
     const user = await this.prismaService.user.create({
       data: {
         email: registerDto.email,
         password: hashedPassword,
         name: registerDto.name,
+        role: registerDto.role || Role.CUSTOMER,
       },
     });
 
     // Generate tokens
-    const tokens = await this.generateTokens(user.id, user.email);
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
 
     // Store hashed refresh token
     await this.updateRefreshToken(user.id, tokens.refreshToken);
@@ -46,6 +48,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
+        role: user.role,
       },
       ...tokens,
     };
@@ -69,7 +72,7 @@ export class AuthService {
     }
 
     // Generate tokens
-    const tokens = await this.generateTokens(user.id, user.email);
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
 
     // Store hashed refresh token
     await this.updateRefreshToken(user.id, tokens.refreshToken);
@@ -79,6 +82,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
+        role: user.role,
       },
       ...tokens,
     };
@@ -109,7 +113,7 @@ export class AuthService {
       }
 
       // Generate new tokens (rotation)
-      const tokens = await this.generateTokens(payload.sub, payload.email);
+      const tokens = await this.generateTokens(payload.sub, payload.email, user.role);
 
       // Update stored refresh token
       await this.updateRefreshToken(payload.sub, tokens.refreshToken);
@@ -132,8 +136,8 @@ export class AuthService {
     };
   }
 
-  private async generateTokens(userId: string, email: string) {
-    const payload = { sub: userId, email };
+  private async generateTokens(userId: string, email: string, role: Role) {
+    const payload = { sub: userId, email, role };
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {

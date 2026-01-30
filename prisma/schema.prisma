@@ -17,12 +17,20 @@ enum OrderStatus {
   CANCELLED
 }
 
+// User Role Enum
+enum Role {
+  ADMIN
+  SELLER
+  CUSTOMER
+}
+
 // Users Table
 model User {
   id           String    @id @default(uuid())
   email        String    @unique
   password     String    // Hashed password
   name         String?
+  role         Role      @default(CUSTOMER)
   refreshToken String?   // Hashed refresh token for rotation
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

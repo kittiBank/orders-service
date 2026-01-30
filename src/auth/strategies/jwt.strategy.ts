@@ -2,10 +2,12 @@ import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 import { PrismaService } from "../../prisma/prisma.service";
+import { Role } from "../../common/enums/role.enum";
 
 export interface JwtPayload {
   sub: string; // user id
   email: string;
+  role: Role;
 }
 
 @Injectable()
@@ -28,6 +30,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException("User not found");
     }
 
-    return { id: user.id, email: user.email, name: user.name };
+    return { 
+      id: user.id, 
+      email: user.email, 
+      name: user.name,
+      role: user.role,
+    };
   }
 }
