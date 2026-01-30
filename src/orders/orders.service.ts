@@ -1,5 +1,10 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { Prisma } from "@prisma/client";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
 import { GetOrdersQueryDto } from "./dto/get-orders-query.dto";
@@ -80,6 +85,11 @@ export class OrdersService {
   }
 
   async create(createOrderDto: CreateOrderDto): Promise<Order> {
+    // Validate items array is not empty (extra safety check)
+    if (!createOrderDto.items || createOrderDto.items.length === 0) {
+      throw new BadRequestException("Order must have at least one item");
+    }
+
     // Calculate item totals and add to each item
     const itemsWithTotal = createOrderDto.items.map((item) => ({
       ...item,
@@ -95,37 +105,119 @@ export class OrdersService {
     // Calculate total
     const total = subtotal + shippingFee;
 
-    const order = await this.prisma.order.create({
-      data: {
-        customerId: createOrderDto.customerId,
-        items: itemsWithTotal,
-        subtotal,
-        shippingFee,
-        total,
-        shippingAddress: createOrderDto.shippingAddress,
-        note: createOrderDto.note,
-      } as any,
-    });
+    try {
+      const order = await this.prisma.order.create({
+        data: {
+          customerId: createOrderDto.customerId,
+          items: itemsWithTotal,
+          subtotal,
+          shippingFee,
+          total,
+          shippingAddress: createOrderDto.shippingAddress,
+          note: createOrderDto.note,
+        } as any,
+      });
 
-    return order as any;
+      return order as any;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        throw new BadRequestException(
+          `Failed to create order: ${error.message}`,
+        );
+      }
+      throw error;
+    }
   }
 
   async update(id: string, updateOrderDto: UpdateOrderDto): Promise<Order> {
     // Check if order exists
-    await this.findOne(id);
+    const existingOrder = await this.findOne(id);
 
-    const order = await this.prisma.order.update({
-      where: { id },
-      data: {
-        ...(updateOrderDto.status && { status: updateOrderDto.status as any }),
-        ...(updateOrderDto.shippingAddress && {
-          shippingAddress: updateOrderDto.shippingAddress as any,
-        }),
-        ...(updateOrderDto.note !== undefined && { note: updateOrderDto.note }),
-      },
-    });
-    console.log("Updated order:", order);
-    return order as any;
+    // Validate status transitions if status is being updated
+    if (updateOrderDto.status) {
+      this.validateStatusTransition(
+        existingOrder.status as any,
+        updateOrderDto.status,
+      );
+    }
+
+    try {
+      const order = await this.prisma.order.update({
+        where: { id },
+        data: {
+          ...(updateOrderDto.status && {
+            status: updateOrderDto.status as any,
+          }),
+          ...(updateOrderDto.shippingAddress && {
+            shippingAddress: updateOrderDto.shippingAddress as any,
+          }),
+          ...(updateOrderDto.note !== undefined && {
+            note: updateOrderDto.note,
+          }),
+        },
+      });
+      return order as any;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        throw new BadRequestException(
+          `Failed to update order: ${error.message}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  // DELIVERED and CANCELLED are final states (cannot be changed)
+  private validateStatusTransition(
+    currentStatus: string,
+    newStatus: string,
+  ): void {
+    // If status is not changing, allow it
+    if (currentStatus === newStatus) {
+      return;
+    }
+
+    // DELIVERED is a final state - cannot change to any other status
+    if (currentStatus === "DELIVERED") {
+      throw new BadRequestException(
+        `Order is already DELIVERED and cannot be changed to ${newStatus}`,
+      );
+    }
+
+    // CANCELLED is a final state - cannot change to any other status
+    if (currentStatus === "CANCELLED") {
+      throw new BadRequestException(
+        `Cancelled orders cannot be changed to ${newStatus}`,
+      );
+    }
+
+    // Cannot move backwards in the workflow
+    const statusOrder = {
+      PENDING: 0,
+      CONFIRMED: 1,
+      PROCESSING: 2,
+      SHIPPED: 3,
+      DELIVERED: 4,
+    };
+
+    const currentOrder = statusOrder[currentStatus];
+    const newOrder = statusOrder[newStatus];
+
+    // Allow moving to CANCELLED from any non-final state
+    if (newStatus === "CANCELLED") {
+      return;
+    }
+
+    // Prevent moving backwards (e.g., SHIPPED -> PROCESSING)
+    if (
+      currentOrder !== undefined &&
+      newOrder !== undefined &&
+      newOrder < currentOrder
+    ) {
+      throw new BadRequestException(
+        `Cannot move order backwards from ${currentStatus} to ${newStatus}`,
+      );
+    }
   }
 
   async remove(id: string): Promise<void> {
@@ -143,30 +235,54 @@ export class OrdersService {
     const success: string[] = [];
     const failed: { id: string; reason: string }[] = [];
 
+    // Validate orderIds array is not empty
+    if (!bulkUpdateDto.orderIds || bulkUpdateDto.orderIds.length === 0) {
+      throw new BadRequestException("Must provide at least one order ID");
+    }
+
     // Check all orders exist and are not deleted
     const existingOrders = await this.prisma.order.findMany({
       where: {
         id: { in: bulkUpdateDto.orderIds },
         deletedAt: null,
       },
-      select: { id: true },
+      select: { id: true, status: true },
     });
 
-    const existingOrderIds = new Set(existingOrders.map((order) => order.id));
+    const existingOrderMap = new Map(
+      existingOrders.map((order) => [order.id, order.status]),
+    );
 
-    // Identify missing or deleted orders
+    // Identify missing or deleted orders, and validate status transitions
     for (const orderId of bulkUpdateDto.orderIds) {
-      if (!existingOrderIds.has(orderId)) {
+      const currentStatus = existingOrderMap.get(orderId);
+
+      if (!currentStatus) {
         failed.push({
           id: orderId,
           reason: "Order not found or has been deleted",
         });
+        continue;
+      }
+
+      // Validate status transition for each order
+      try {
+        this.validateStatusTransition(
+          currentStatus as string,
+          bulkUpdateDto.status,
+        );
+      } catch (error) {
+        failed.push({
+          id: orderId,
+          reason: error.message || "Invalid status transition",
+        });
       }
     }
 
-    // Update only the valid orders
-    const validOrderIds = bulkUpdateDto.orderIds.filter((id) =>
-      existingOrderIds.has(id),
+    // Update only the valid orders (those not in failed array)
+    const failedIds = new Set(failed.map((f) => f.id));
+    const validOrderIds = bulkUpdateDto.orderIds.filter(
+      (id) => existingOrderMap.has(id) && !failedIds.has(id),
     );
 
     if (validOrderIds.length > 0) {
@@ -184,10 +300,15 @@ export class OrdersService {
         success.push(...validOrderIds);
       } catch (error) {
         // If the bulk update fails, mark all valid orders as failed
+        const errorMessage =
+          error instanceof Prisma.PrismaClientKnownRequestError
+            ? `Database error: ${error.message}`
+            : error.message || "Update failed";
+
         for (const orderId of validOrderIds) {
           failed.push({
             id: orderId,
-            reason: error.message || "Update failed",
+            reason: errorMessage,
           });
         }
       }
