@@ -17,6 +17,19 @@ enum OrderStatus {
   CANCELLED
 }
 
+// Users Table
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  password     String    // Hashed password
+  name         String?
+  refreshToken String?   // Hashed refresh token for rotation
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("users")
+}
+
 // Orders Table
 model Order {
   id              String        @id @default(uuid())
