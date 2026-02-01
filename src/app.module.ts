@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { APP_GUARD } from "@nestjs/core";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -7,6 +8,11 @@ import { OrdersModule } from "./orders/orders.module";
 
 @Module({
   imports: [
+    // Load dev.env file
+    ConfigModule.forRoot({
+      envFilePath: 'dev.env',
+      isGlobal: true,
+    }),
     // Rate limiting configuration
     ThrottlerModule.forRoot([
       {
