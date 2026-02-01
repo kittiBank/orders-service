@@ -209,6 +209,13 @@ npm run test:watch
 <img width="600" height="300" alt="Screenshot 2569-02-01 at 12 01 01" src="https://github.com/user-attachments/assets/ef65bb33-b64e-473f-891b-6f7f9fa6541b" />
 
 
+----
+
+## For Front-end web applcation 
+
+Can install and set-up this repo: https://github.com/kittiBank/order-manage-web
+
+
 
 
   
