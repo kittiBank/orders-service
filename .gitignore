@@ -18,7 +18,7 @@ out/
 .env.local
 .env.*.local
 .env.production
-.env.development
+# dev.env is committed for easy testing/grading
 
 # Logs
 logs/
